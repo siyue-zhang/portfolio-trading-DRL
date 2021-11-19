@@ -171,6 +171,7 @@ class PortfolioTradingEnv(MultiAgentEnv):
         sell_index = argsort_actions[:np.where(actions < 0)[0].shape[0]]
         buy_index = argsort_actions[::-1][:np.where(actions > 0)[0].shape[0]]
 
+        print("During step:")
         for index in sell_index:
             self._sell_stock(index, actions[index])
 
@@ -181,8 +182,9 @@ class PortfolioTradingEnv(MultiAgentEnv):
         # update total asset value
         summation = self.account['Cash']
         for stock in self.portfolio_stocks:
-            summation += self.account[stock]*self.stocks_history_dic[stock].loc[self.current_day,"close"]
+            summation += self.account[stock]*self.current_prices[stock]
         self.reward = (summation - self.total_asset)*self.reward_scale
+        print(f"Step Reward: {np.round(self.reward,5):8}")
         self.total_asset = summation
 
         # update to next date
