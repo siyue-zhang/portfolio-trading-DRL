@@ -42,7 +42,7 @@ class ShowTotalAsset(BaseCallback):
 
 last_day = datetime.datetime.strptime("2016-04-11", '%Y-%m-%d') 
 
-from stable_baselines3 import DQN, PPO, A2C
+from stable_baselines3 import DQN, PPO, A2C, TD3
 from stable_baselines3.common.env_util import make_vec_env
 
 # Instantiate the env
@@ -51,10 +51,26 @@ env = PortfolioTradingEnv(["WMT","ABBV","MMM"], 100000, "2013-04-10", "2016-04-1
 log_dir="./"
 env = Monitor(env, log_dir,info_keywords=("total_reward", "total_asset", "last_account", "action_summary"))
 
-total_timesteps = 100000
+total_timesteps = 200000
 # env = make_vec_env(lambda: env, n_envs=1)
 callback = ShowTotalAsset()
-model = A2C('MlpPolicy', env).learn(total_timesteps)
+# model = A2C('MlpPolicy', env, learning_rate=1e-4, ).learn(total_timesteps)
+
+n_actions = env.action_space.shape[-1]
+action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+
+model = TD3(policy='MlpPolicy', 
+        env=env,
+        action_noise=action_noise,
+        verbose=0,
+        gamma=0.99,
+        learning_rate=1e-4,
+        learning_starts=0,
+        batch_size=32,
+        buffer_size=200000,
+        seed=20)
+
+model.learn(total_timesteps=total_timesteps)
 
 
 
