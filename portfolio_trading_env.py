@@ -1,7 +1,7 @@
 import pandas as pd
 import gym
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from indicators import *
 from gym import spaces
@@ -48,6 +48,10 @@ class PortfolioTradingEnv(MultiAgentEnv):
         self.stocks_history.index = pd.to_datetime(self.stocks_history.index)
         self.stocks_history_dic = dict.fromkeys(self.portfolio_stocks)
 
+        while(self.start_day not in self.stocks_history.index):
+            self.start_day += timedelta(days=1)
+        print(f"Experiment Start: {self.start_day}")
+
         for idx, stock in enumerate(self.portfolio_stocks):
             self.stocks_history_dic[stock] = self.stocks_history[self.stocks_history["symbol"]==stock]
             self.stocks_history_dic[stock] = self.stocks_history_dic[stock].join(RSI(stock,self.stocks_history)["RSI"], how="right")
@@ -75,6 +79,7 @@ class PortfolioTradingEnv(MultiAgentEnv):
         self.account = dict.fromkeys(['Cash'] + self.portfolio_stocks)
         self.total_asset = None
         self.reward = None
+        self.total_reward = None
 
         self.current_day = None
         self.current_prices = dict.fromkeys(self.portfolio_stocks)
@@ -82,6 +87,10 @@ class PortfolioTradingEnv(MultiAgentEnv):
         self.norm_state = None
         self.terminal = False
 
+        self.action_summary = dict.fromkeys(self.portfolio_stocks)
+        self.counter_list = ["buy", "sell", "no-action"]
+        for key in self.action_summary:
+            self.action_summary[key] = dict.fromkeys(self.counter_list)
 
     def _update_state(self):
 
@@ -121,12 +130,17 @@ class PortfolioTradingEnv(MultiAgentEnv):
         
         self.total_asset = self.initial_cash
         self.reward = 0
+        self.total_reward = 0
         self.terminal = False
+
+        for stcok in self.action_summary.keys():
+            for act in self.counter_list:
+                self.action_summary[stcok][act] = 0
 
         self._update_state()
         self._update_norm_state()
         
-        return
+        return np.array(self.norm_state).astype(np.float32)
     
 
     def _sell_stock(self, index, shares):
@@ -139,8 +153,13 @@ class PortfolioTradingEnv(MultiAgentEnv):
         fee = get_trading_fee(self.current_prices[stock], shares)
         self.account["Cash"] += (shares*self.current_prices[stock] - fee)
         
-        if shares != 0:
-            print(f"Sell {shares} {stock} @ Price {self.current_prices[stock]:.3f} Service fee $ {fee:.2f}.")
+        if fee > 0:
+            self.action_summary[stock]["sell"] += 1
+        else:
+            self.action_summary[stock]["no-action"] += 1
+
+        # if shares != 0:
+        #     print(f"Sell {shares} {stock} @ Price {self.current_prices[stock]:.3f} Service fee $ {fee:.2f}.")
 
         return
     
@@ -154,16 +173,20 @@ class PortfolioTradingEnv(MultiAgentEnv):
         fee = get_trading_fee(self.current_prices[stock], shares)
         self.account["Cash"] -= (shares*self.current_prices[stock] + fee)
 
-        if shares != 0:
-            print(f"Buy {shares} {stock} @ Price {self.current_prices[stock]:.3f} Service fee $ {fee:.2f}.")
+        if fee > 0:
+            self.action_summary[stock]["buy"] += 1
+        else:
+            self.action_summary[stock]["no-action"] += 1
+        # if shares != 0:
+        #     print(f"Buy {shares} {stock} @ Price {self.current_prices[stock]:.3f} Service fee $ {fee:.2f}.")
 
         return
 
 
     def step(self, actions):
         
-        print("\nBefore step:")
-        self.render()
+        # print("\nBefore step:")
+        # self.render()
 
         actions = actions*self.max_share_per_trade
         argsort_actions = np.argsort(actions)
@@ -171,7 +194,11 @@ class PortfolioTradingEnv(MultiAgentEnv):
         sell_index = argsort_actions[:np.where(actions < 0)[0].shape[0]]
         buy_index = argsort_actions[::-1][:np.where(actions > 0)[0].shape[0]]
 
-        print("During step:")
+        hold_index = [x for x in argsort_actions if (x not in sell_index) and (x not in buy_index)]
+        for index in hold_index:
+            self.action_summary[self.portfolio_stocks[index]]["no-action"] += 1
+
+        # print("During step:")
         for index in sell_index:
             self._sell_stock(index, actions[index])
 
@@ -184,14 +211,15 @@ class PortfolioTradingEnv(MultiAgentEnv):
         for stock in self.portfolio_stocks:
             summation += self.account[stock]*self.current_prices[stock]
         self.reward = (summation - self.total_asset)*self.reward_scale
-        print(f"Step Reward: {np.round(self.reward,5):8}")
+        self.total_reward += self.reward
+        # print(f"Step Reward: {np.round(self.reward,5):8}")
         self.total_asset = summation
 
         # update to next date
         self.current_day = self.day_list[np.where(self.day_list == self.current_day)[0] + 1][0]
         self._update_current_price()
 
-        if self.current_day == self.end_day:
+        if self.current_day >= self.end_day:
             self.terminal = True
 
         self._update_state()
@@ -199,8 +227,11 @@ class PortfolioTradingEnv(MultiAgentEnv):
         self._update_norm_state()
         # print(self.norm_state, len(self.norm_state))
 
-        return self.norm_state, self.reward, self.terminal, {}
+        return np.array(self.norm_state).astype(np.float32), self.reward, self.terminal, {"total_reward": self.total_reward,"total_asset": self.total_asset, "last_account": self.account, "action_summary": self.action_summary}
 
+
+    def seed(self, seed):
+        np.random.seed(seed)
 
 
     def render(self):
@@ -209,13 +240,14 @@ class PortfolioTradingEnv(MultiAgentEnv):
         print(f"Total Assets Value: {np.round(self.total_asset,2)}\n")
         return
 
+    def close(self) -> None:
+        return super().close()
 
-
-my_pocket = PortfolioTradingEnv(["WMT","AAPL","MMM"], 100000, "2010-03-12", "2016-12-30")
-my_pocket.reset()
-# my_pocket.account["WMT"] = my_pocket.account["WMT"]+1000
-# my_pocket.account["MMM"] = my_pocket.account["MMM"]+1000
-for i in range(4):
-    actions = my_pocket.action_space.sample()
-    my_pocket.step(actions)
-my_pocket.render()
+# my_pocket = PortfolioTradingEnv(["WMT","AAPL","MMM"], 100000, "2010-03-12", "2016-12-30")
+# my_pocket.reset()
+# # my_pocket.account["WMT"] = my_pocket.account["WMT"]+1000
+# # my_pocket.account["MMM"] = my_pocket.account["MMM"]+1000
+# for i in range(4):
+#     actions = my_pocket.action_space.sample()
+#     my_pocket.step(actions)
+# my_pocket.render()
