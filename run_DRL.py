@@ -3,7 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from stable_baselines3 import TD3
+from stable_baselines3 import TD3, PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common import results_plotter
 from stable_baselines3.common.noise import NormalActionNoise
@@ -36,13 +36,16 @@ def run_DRL(portfolio_stocks, initial_cash, start_day, end_day, DRL_model, times
         # Because we use parameter noise, we should use a MlpPolicy with layer normalization
         model = TD3('MlpPolicy', env, action_noise=action_noise, verbose=0, seed=10)
 
+    if DRL_model == "PPO":
+        model = PPO("MlpPolicy", env, verbose=0, seed=10)
+
     # Train the agent
     model.learn(total_timesteps=int(timesteps), callback=callback)
 
-    # plot_results([log_dir], timesteps, results_plotter.X_TIMESTEPS, f"{DRL_model} Trading")
-    # plt.show()
+    plot_results([log_dir], timesteps, results_plotter.X_TIMESTEPS, f"{DRL_model} Trading")
+    plt.show()
 
 
 if __name__=='__main__':
 
-    run_DRL(["WMT","ABBV","MMM"], 100000, "2013-04-10", "2015-12-30", "TD3", 1.5e5)
+    run_DRL(["WMT","AAPL","MMM"], 100000, "2012-01-01", "2012-12-30", "PPO", 1e5)

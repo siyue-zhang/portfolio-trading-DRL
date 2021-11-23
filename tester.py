@@ -3,7 +3,7 @@ from collections import defaultdict
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
-from stable_baselines3 import TD3
+from stable_baselines3 import TD3, PPO
 
 from env.portfolio_trading_env import PortfolioTradingEnv
 
@@ -26,6 +26,9 @@ def test_trained_model(portfolio_stocks, initial_cash, start_day, end_day, DRL_m
 
     if DRL_model == "TD3":
         model = TD3.load("./log/TD3/TD3_best_model")
+
+    if DRL_model == "PPO":
+        model = PPO.load("./log/PPO/PPO_best_model")
 
     obs = env_test.reset()
     total_asset_log = []
@@ -55,20 +58,23 @@ def test_trained_model(portfolio_stocks, initial_cash, start_day, end_day, DRL_m
             break
     print(f"After Test: \n {env_test.action_summary}")
 
+    np.savetxt(f"./log/{DRL_model}/{DRL_model}_asset_train_2012_test_{start_day}.csv", total_asset_log)
+
     del equal_weighted_index[0]
 
     x = range(1, len(total_asset_log)+1)
     fig, ax1 = plt.subplots()
-    ax1.plot(x, total_asset_log, color="blue", label="total asset")
+    ax1.plot(x, total_asset_log, color="blue", label="total asset",)
+    ax1.legend()
     ax2 = ax1.twinx()
     ax2.plot(x, equal_weighted_index, color="green", label="price index")
-    fig.tight_layout()
+    ax2.legend(loc="lower left")
     plt.show()
 
-    plt.plot(x, prices_log[portfolio_stocks[0]])
-    plt.plot(x, prices_log[portfolio_stocks[1]])
-    plt.plot(x, prices_log[portfolio_stocks[2]])
-    plt.show()
+    # plt.plot(x, prices_log[portfolio_stocks[0]])
+    # plt.plot(x, prices_log[portfolio_stocks[1]])
+    # plt.plot(x, prices_log[portfolio_stocks[2]])
+    # plt.show()
 
 
 
@@ -76,4 +82,4 @@ if __name__=='__main__':
 
     # draw_train_log("TD3")
 
-    test_trained_model(["WMT","ABBV","MMM"], 100000, "2015-07-10", "2015-09-10", "TD3")
+    test_trained_model(["WMT","AAPL","MMM"], 100000, "2012-01-01", "2012-12-30", "PPO")
